@@ -53,6 +53,7 @@ import org.apache.uima.resource.metadata.TypeSystemDescription;
 import org.apache.uima.util.InvalidXMLException;
 import org.apache.uima.util.XMLInputSource;
 import org.apache.wicket.AttributeModifier;
+import org.apache.wicket.Component;
 import org.apache.wicket.ajax.AjaxRequestTarget;
 import org.apache.wicket.ajax.form.AjaxFormComponentUpdatingBehavior;
 import org.apache.wicket.ajax.form.OnChangeAjaxBehavior;
@@ -62,6 +63,7 @@ import org.apache.wicket.extensions.markup.html.form.select.SelectOption;
 import org.apache.wicket.feedback.IFeedback;
 import org.apache.wicket.markup.ComponentTag;
 import org.apache.wicket.markup.MarkupStream;
+import org.apache.wicket.markup.html.WebMarkupContainer;
 import org.apache.wicket.markup.html.basic.Label;
 import org.apache.wicket.markup.html.form.Button;
 import org.apache.wicket.markup.html.form.CheckBox;
@@ -76,6 +78,7 @@ import org.apache.wicket.markup.html.form.upload.FileUpload;
 import org.apache.wicket.markup.html.form.upload.FileUploadField;
 import org.apache.wicket.markup.html.list.ListItem;
 import org.apache.wicket.markup.html.list.ListView;
+import org.apache.wicket.markup.html.panel.EmptyPanel;
 import org.apache.wicket.model.CompoundPropertyModel;
 import org.apache.wicket.model.IModel;
 import org.apache.wicket.model.LoadableDetachableModel;
@@ -145,9 +148,6 @@ public class ProjectLayersPanel
     private final ImportLayerForm importLayerForm;
     private Select<AnnotationLayer> layerSelection;
 
-    private final static List<String> PRIMITIVE_TYPES = asList(CAS.TYPE_NAME_STRING,
-            CAS.TYPE_NAME_INTEGER, CAS.TYPE_NAME_FLOAT, CAS.TYPE_NAME_BOOLEAN);
-
     private String layerType = WebAnnoConst.SPAN_TYPE;
 
     public ProjectLayersPanel(String id, final IModel<Project> aProjectModel)
@@ -177,7 +177,7 @@ public class ProjectLayersPanel
         importLayerForm = new ImportLayerForm("importLayerForm");
         add(importLayerForm);
     }
-
+    
     @Override
     protected void onModelChanged()
     {
@@ -187,8 +187,7 @@ public class ProjectLayersPanel
         layerDetailForm.setModelObject(new AnnotationLayer());
         layerDetailForm.setVisible(false);
         featureSelectionForm.setVisible(false);
-        featureDetailForm.setModelObject(new AnnotationFeature());
-        featureDetailForm.setVisible(false);
+        featureDetailForm.setModelObject(null);
     }
     
     private class LayerSelectionForm
@@ -904,7 +903,7 @@ public class ProjectLayersPanel
 //                    layerDetailForm.setModelObject(null);
                     layerDetailForm.setVisible(false);
                     featureSelectionForm.setVisible(false);
-                    featureDetailForm.setVisible(false);
+                    featureDetailForm.setModelObject(null);
                 }
             });
 
@@ -1000,16 +999,20 @@ public class ProjectLayersPanel
     private class FeatureDetailForm
         extends Form<AnnotationFeature>
     {
+        private static final String MID_TRAITS_CONTAINER = "traitsContainer";
+        private static final String MID_TRAITS = "traits";
         private static final long serialVersionUID = -1L;
-        DropDownChoice<TagSet> tagSet;
-        DropDownChoice<FeatureType> featureType;
-        CheckBox required;
+        private DropDownChoice<FeatureType> featureType;
+        private CheckBox required;
+        private WebMarkupContainer traitsContainer;
 
         public FeatureDetailForm(String id)
         {
-            super(id, new CompoundPropertyModel<>(
-                new EntityModel<>(new AnnotationFeature())));
+            super(id, CompoundPropertyModel.of(new Model<AnnotationFeature>()));
 
+            add(traitsContainer = new WebMarkupContainer(MID_TRAITS_CONTAINER));
+            traitsContainer.setOutputMarkupId(true);
+            
             add(new Label("name")
             {
                 private static final long serialVersionUID = 1L;
@@ -1068,11 +1071,8 @@ public class ProjectLayersPanel
 
                 {
                     IModel<FeatureType> model = LambdaModelAdapter.of(() -> {
-                        return featureSupportRegistry.getAllTypes(layerDetailForm.getModelObject())
-                                .stream()
-                                .filter(r -> r.getName()
-                                        .equals(featureDetailForm.getModelObject().getType()))
-                                .findFirst().orElse(null);
+                        return featureSupportRegistry
+                                .getFeatureType(featureDetailForm.getModelObject());
                     }, (v) -> FeatureDetailForm.this.getModelObject().setType(v.getName()));
                     setRequired(true);
                     setNullValid(false);
@@ -1087,6 +1087,25 @@ public class ProjectLayersPanel
                 {
                     setEnabled(isNull(FeatureDetailForm.this.getModelObject().getId()));
                 }
+                
+                @Override
+                protected void onModelChanged()
+                {
+                    // If the feature type has changed, we need to set up a new traits editor
+                    Component newTraits;
+                    if (FeatureDetailForm.this.getModelObject() != null
+                            && getModelObject() != null) {
+                        FeatureSupport<?> fs = featureSupportRegistry
+                                .getFeatureSupport(getModelObject().getFeatureSupportId());
+                        newTraits = fs.createTraitsEditor(MID_TRAITS,
+                                FeatureDetailForm.this.getModel());
+                    }
+                    else {
+                        newTraits = new EmptyPanel(MID_TRAITS);
+                    }
+                    
+                    traitsContainer.addOrReplace(newTraits);
+                }
             });
             featureType.add(new AjaxFormComponentUpdatingBehavior("change")
             {
@@ -1095,58 +1114,39 @@ public class ProjectLayersPanel
                 @Override
                 protected void onUpdate(AjaxRequestTarget aTarget)
                 {
-                    aTarget.add(tagSet);
                     aTarget.add(required);
+                    aTarget.add(traitsContainer);
                 }
             });
-            add(tagSet = new DropDownChoice<TagSet>("tagset")
-            {
-                private static final long serialVersionUID = -6705445053442011120L;
-                {
-                    setOutputMarkupPlaceholderTag(true);
-                    setOutputMarkupId(true);
-                    setChoiceRenderer(new ChoiceRenderer<>("name"));
-                    setNullValid(true);
-                    setChoices(LambdaModel.of(() -> annotationService
-                            .listTagSets(ProjectLayersPanel.this.getModelObject())));
-                }
-
-                @Override
-                protected void onConfigure()
-                {
-                    FeatureType type = featureType.getModelObject();
-                    if (type != null) {
-                        FeatureSupport fs = featureSupportRegistry
-                                .getFeatureSupport(type.getFeatureSupportId());
-                        setEnabled(fs.isTagsetSupported(FeatureDetailForm.this.getModelObject()));
-                    }
-                    else {
-                        setEnabled(false);
-                    }
-                }
-            });
-
+            
             add(new Button("save", new StringResourceModel("label"))
             {
                 private static final long serialVersionUID = 1L;
 
                 @Override
-                public void onSubmit()
+                public void onAfterSubmit()
                 {
+                    // Processing the data in onAfterSubmit so the traits panel can use the
+                    // override onSubmit in its nested form and store the traits before
+                    // we clear the currently selected feature.
+                    
                     AnnotationFeature feature = FeatureDetailForm.this.getModelObject();
                     String name = feature.getUiName();
                     name = name.replaceAll("\\W", "");
                     // Check if feature name is not from the restricted names list
                     if (WebAnnoConst.RESTRICTED_FEATURE_NAMES.contains(name)) {
-                        error("'" + feature.getUiName().toLowerCase() + " (" + name + ")"
-                                + "' is a restricted keyword for a feature name. Please use a different name for the feature.");
+                        error("'" + feature.getUiName().toLowerCase() + " (" + name + ")'"
+                                + " is a reserved feature name. Please use a different name "
+                                + "for the feature.");
                         return;
                     }
-                    if (layerDetailForm.getModelObject().getType().equals(RELATION_TYPE)
+                    if (RELATION_TYPE.equals(layerDetailForm.getModelObject().getType())
                             && (name.equals(WebAnnoConst.FEAT_REL_SOURCE)
                                     || name.equals(WebAnnoConst.FEAT_REL_TARGET)
                                     || name.equals(FIRST) || name.equals(NEXT))) {
-                        error("layer " + name + " is not allowed as a feature name");
+                        error("'" + feature.getUiName().toLowerCase() + " (" + name + ")'"
+                                + " is a reserved feature name on relation layers. . Please "
+                                + "use a different name for the feature.");
                         return;
                     }
                     // Checking if feature name doesn't start with a number or underscore
@@ -1154,7 +1154,8 @@ public class ProjectLayersPanel
                     if (StringUtils.isNumeric(name.substring(0, 1))
                             || name.substring(0, 1).equals("_")
                             || !StringUtils.isAlphanumeric(name.replace("_", ""))) {
-                        error("Feature names must start with a letter and consist only of letters, digits, or underscores.");
+                        error("Feature names must start with a letter and consist only of "
+                                + "letters, digits, or underscores.");
                         return;
                     }
                     if (isNull(feature.getId())) {
@@ -1168,28 +1169,39 @@ public class ProjectLayersPanel
                         }
 
                         if (annotationService.existsFeature(name, feature.getLayer())) {
-                            error("this feature already exists!");
+                            error("This feature already exists!");
                             return;
                         }
                         feature.setName(name);
-                        saveFeature(feature);
+                        
+                        FeatureSupport<?> fs = featureSupportRegistry
+                                .getFeatureSupport(featureDetailForm.featureType.getModelObject()
+                                        .getFeatureSupportId());
+                        
+                        // Let the feature support finalize the configuration of the feature
+                        fs.configureFeature(feature);
+                        
                     }
+
+                    // Save feature
+                    annotationService.createFeature(feature);
+
+                    // Clear currently selected feature / feature details
+                    featureSelectionForm.getModelObject().feature = null;
+                    featureDetailForm.setModelObject(null);
+                    
                     // Trigger LayerConfigurationChangedEvent
                     applicationEventPublisherHolder.get().publishEvent(
                             new LayerConfigurationChangedEvent(this, feature.getProject()));
-
-                    if (tagSet.getModelObject() != null) {
-                        FeatureDetailForm.this.getModelObject().setTagset(tagSet.getModelObject());
-                    }
                 }
             });
+            
             add(new Button("cancel", new StringResourceModel("label")) {
                 private static final long serialVersionUID = 1L;
                 
                 {
                     // Avoid saving data
                     setDefaultFormProcessing(false);
-                    setVisible(true);
                 }
                 
                 @Override
@@ -1197,30 +1209,27 @@ public class ProjectLayersPanel
                 {
                     // cancel selection of feature list
                     featureSelectionForm.feature.setModelObject(null);
-                    
-                    featureDetailForm.setModelObject(new AnnotationFeature());
-                    FeatureDetailForm.this.setVisible(false);
+                    featureDetailForm.setModelObject(null);
                 }
             });
-
-        }
-    }
-
-    private void saveFeature(AnnotationFeature aFeature)
-    {
-        FeatureSupport fs = featureSupportRegistry.getFeatureSupport(
-                featureDetailForm.featureType.getModelObject().getFeatureSupportId());
-        
-        // Let the feature support finalize the configuration of the feature
-        fs.configureFeature(aFeature);
-
-        // Force the tagset to null if the features do not support tagsets
-        if (!fs.isTagsetSupported(aFeature)) {
-            aFeature.setTagset(null);
         }
         
-        annotationService.createFeature(aFeature);
-        featureDetailForm.setVisible(false);
+        @Override
+        protected void onModelChanged()
+        {
+            super.onModelChanged();
+            
+            // Since feature type uses a lambda model, it needs to be notified explicitly.
+            featureType.modelChanged();
+        }
+        
+        @Override
+        protected void onConfigure()
+        {
+            super.onConfigure();
+            
+            setVisible(getModelObject() != null);
+        }
     }
 
     public class FeatureSelectionForm
@@ -1258,8 +1267,6 @@ public class ProjectLayersPanel
                 {
                     if (aNewSelection != null) {
                         featureDetailForm.setModelObject(aNewSelection);
-                        featureDetailForm.setVisible(true);
-
                     }
                 }
 
@@ -1286,8 +1293,10 @@ public class ProjectLayersPanel
                     // cancel selection of feature list
                     feature.setModelObject(null);
                     
-                    featureDetailForm.setDefaultModelObject(new AnnotationFeature());
-                    featureDetailForm.setVisible(true);
+                    AnnotationFeature newFeature = new AnnotationFeature();
+                    newFeature.setLayer(layerDetailForm.getModelObject());
+                    newFeature.setProject(ProjectLayersPanel.this.getModelObject());
+                    featureDetailForm.setDefaultModelObject(newFeature);
                 }
 
                 @Override

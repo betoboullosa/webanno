@@ -20,8 +20,6 @@ package de.tudarmstadt.ukp.clarin.webanno.api.annotation.feature;
 import java.util.ArrayList;
 import java.util.List;
 
-import javax.annotation.Resource;
-
 import org.apache.commons.lang3.text.WordUtils;
 import org.apache.uima.cas.ArrayFS;
 import org.apache.uima.cas.CAS;
@@ -33,6 +31,7 @@ import org.apache.uima.resource.metadata.TypeDescription;
 import org.apache.uima.resource.metadata.TypeSystemDescription;
 import org.apache.wicket.MarkupContainer;
 import org.apache.wicket.model.IModel;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import de.tudarmstadt.ukp.clarin.webanno.api.AnnotationSchemaService;
@@ -53,9 +52,9 @@ import de.tudarmstadt.ukp.dkpro.core.api.segmentation.type.Token;
 
 @Component
 public class SlotFeatureSupport
-    implements FeatureSupport
+    implements FeatureSupport<Void>
 {
-    private @Resource AnnotationSchemaService annotationService;
+    private @Autowired AnnotationSchemaService annotationService;
 
     private String featureSupportId;
     
@@ -77,7 +76,7 @@ public class SlotFeatureSupport
         List<FeatureType> types = new ArrayList<>();
         
         // Slot features are only supported on span layers
-        if (aAnnotationLayer.getType().equals(WebAnnoConst.SPAN_TYPE)) {
+        if (WebAnnoConst.SPAN_TYPE.equals(aAnnotationLayer.getType())) {
             // Add layers of type SPAN available in the project
             for (AnnotationLayer spanLayer : annotationService
                     .listAnnotationLayer(aAnnotationLayer.getProject())) {
@@ -89,7 +88,7 @@ public class SlotFeatureSupport
                     continue;
                 }
 
-                if (spanLayer.getType().equals(WebAnnoConst.SPAN_TYPE)) {
+                if (WebAnnoConst.SPAN_TYPE.equals(spanLayer.getType())) {
                     types.add(new FeatureType(spanLayer.getName(), 
                             "Link: " + spanLayer.getUiName(), featureSupportId));
                 }
@@ -113,7 +112,7 @@ public class SlotFeatureSupport
             default:
                 return false;
             }
-        case NONE: // fallthrough
+        case NONE: // fall-through
         default:
             return false;
         }
@@ -124,24 +123,24 @@ public class SlotFeatureSupport
             AnnotationActionHandler aHandler, final IModel<AnnotatorState> aStateModel,
             final IModel<FeatureState> aFeatureStateModel)
     {
-        FeatureState featureState = aFeatureStateModel.getObject();
+        AnnotationFeature feature = aFeatureStateModel.getObject().feature;
         final FeatureEditor editor;
         
-        switch (featureState.feature.getMultiValueMode()) {
+        switch (feature.getMultiValueMode()) {
         case ARRAY:
-            switch (featureState.feature.getLinkMode()) {
+            switch (feature.getLinkMode()) {
             case WITH_ROLE:
                 editor = new LinkFeatureEditor(aId, aOwner, aHandler, aStateModel,
                         aFeatureStateModel);
                 break;
             default:
-                throw unsupportedFeatureTypeException(featureState);
+                throw unsupportedFeatureTypeException(feature);
             }
             break;
         case NONE:
-            throw unsupportedLinkModeException(featureState);
+            throw unsupportedLinkModeException(feature);
         default:
-            throw unsupportedMultiValueModeException(featureState);
+            throw unsupportedMultiValueModeException(feature);
         }
         
         return editor;

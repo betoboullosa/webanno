@@ -107,6 +107,10 @@
     </dependency>
     <dependency>
       <groupId>org.springframework</groupId>
+      <artifactId>spring-beans</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework</groupId>
       <artifactId>spring-tx</artifactId>
     </dependency>
     <dependency>
@@ -268,7 +272,7 @@
               <ignoredDependency>org.springframework.boot:spring-boot-starter-data-jpa</ignoredDependency>
               <ignoredDependency>com.h2database:h2</ignoredDependency>
             </ignoredDependencies>
-            <usedDependencies>
+            <usedDependencies combine.children="append">
               <!--
                 - Maven doesn't detect the the springfox swagger ui dependency because there is
                 - no actual code dependency and springfox auto-configures itself

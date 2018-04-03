@@ -30,6 +30,7 @@ import org.apache.uima.cas.FeatureStructure;
 import org.apache.uima.resource.metadata.TypeDescription;
 import org.apache.uima.resource.metadata.TypeSystemDescription;
 import org.apache.wicket.MarkupContainer;
+import org.apache.wicket.markup.html.panel.Panel;
 import org.apache.wicket.model.IModel;
 import org.springframework.beans.factory.InitializingBean;
 import org.springframework.stereotype.Component;
@@ -39,6 +40,7 @@ import de.tudarmstadt.ukp.clarin.webanno.api.annotation.feature.editor.BooleanFe
 import de.tudarmstadt.ukp.clarin.webanno.api.annotation.feature.editor.FeatureEditor;
 import de.tudarmstadt.ukp.clarin.webanno.api.annotation.feature.editor.NumberFeatureEditor;
 import de.tudarmstadt.ukp.clarin.webanno.api.annotation.feature.editor.TextFeatureEditor;
+import de.tudarmstadt.ukp.clarin.webanno.api.annotation.feature.editor.UimaStringTraitsEditor;
 import de.tudarmstadt.ukp.clarin.webanno.api.annotation.model.AnnotatorState;
 import de.tudarmstadt.ukp.clarin.webanno.api.annotation.model.FeatureState;
 import de.tudarmstadt.ukp.clarin.webanno.api.annotation.util.WebAnnoCasUtil;
@@ -47,7 +49,7 @@ import de.tudarmstadt.ukp.clarin.webanno.model.AnnotationLayer;
 
 @Component
 public class PrimitiveUimaFeatureSupport
-    implements FeatureSupport, InitializingBean
+    implements FeatureSupport<Void>, InitializingBean
 {
     private List<FeatureType> primitiveTypes;
 
@@ -102,16 +104,45 @@ public class PrimitiveUimaFeatureSupport
     }
     
     @Override
+    public Panel createTraitsEditor(String aId,  IModel<AnnotationFeature> aFeatureModel)
+    {
+        AnnotationFeature feature = aFeatureModel.getObject();
+        
+        Panel editor;
+        switch (feature.getMultiValueMode()) {
+        case NONE:
+            switch (feature.getType()) {
+            case CAS.TYPE_NAME_INTEGER:
+            case CAS.TYPE_NAME_FLOAT:
+            case CAS.TYPE_NAME_BOOLEAN:
+                editor = FeatureSupport.super.createTraitsEditor(aId, aFeatureModel);
+                break;
+            case CAS.TYPE_NAME_STRING:
+                editor = new UimaStringTraitsEditor(aId, aFeatureModel);
+                break;
+            default:
+                throw unsupportedFeatureTypeException(feature);
+            }
+            break;
+        case ARRAY: // fall-through
+            throw unsupportedLinkModeException(feature);
+        default:
+            throw unsupportedMultiValueModeException(feature);
+        }
+        return editor;
+    }
+    
+    @Override
     public FeatureEditor createEditor(String aId, MarkupContainer aOwner,
             AnnotationActionHandler aHandler, final IModel<AnnotatorState> aStateModel,
             final IModel<FeatureState> aFeatureStateModel)
     {
-        FeatureState featureState = aFeatureStateModel.getObject();
+        AnnotationFeature feature = aFeatureStateModel.getObject().feature;
         final FeatureEditor editor;
         
-        switch (featureState.feature.getMultiValueMode()) {
+        switch (feature.getMultiValueMode()) {
         case NONE:
-            switch (featureState.feature.getType()) {
+            switch (feature.getType()) {
             case CAS.TYPE_NAME_INTEGER: {
                 editor = new NumberFeatureEditor(aId, aOwner, aFeatureStateModel);
                 break;
@@ -129,13 +160,13 @@ public class PrimitiveUimaFeatureSupport
                 break;
             }
             default:
-                throw unsupportedFeatureTypeException(featureState);
+                throw unsupportedFeatureTypeException(feature);
             }
             break;
-        case ARRAY: // fallthrough
-            throw unsupportedLinkModeException(featureState);
+        case ARRAY: // fall-through
+            throw unsupportedLinkModeException(feature);
         default:
-            throw unsupportedMultiValueModeException(featureState);
+            throw unsupportedMultiValueModeException(feature);
         }
         return editor;
     }

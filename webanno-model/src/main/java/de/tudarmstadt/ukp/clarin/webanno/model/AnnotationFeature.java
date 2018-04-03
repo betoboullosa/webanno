@@ -116,6 +116,10 @@ public class AnnotationFeature
     @Column(name = "link_type_target_feature_name")
     private String linkTypeTargetFeatureName;
     
+    @Lob
+    @Column(length = 64000)
+    private String traits;
+    
     public AnnotationFeature()
     {
         // Nothing to do
@@ -130,6 +134,28 @@ public class AnnotationFeature
     }
     
     
+    public AnnotationFeature(Project aProject, AnnotationLayer aLayer, String aName, String aUiName,
+            String aType)
+    {
+        project = aProject;
+        layer = aLayer;
+        name = aName;
+        uiName = aUiName;
+        type = aType;
+    }
+
+    public AnnotationFeature(Project aProject, AnnotationLayer aLayer, String aName, String aUiName,
+            String aType, String aDescription, TagSet aTagSet)
+    {
+        project = aProject;
+        layer = aLayer;
+        name = aName;
+        uiName = aUiName;
+        type = aType;
+        description = aDescription;
+        tagset = aTagSet;
+    }
+
     public Long getId()
     {
         return id;
@@ -417,6 +443,16 @@ public class AnnotationFeature
         return getType().contains(":");
     }
     
+    public String getTraits()
+    {
+        return traits;
+    }
+
+    public void setTraits(String aTraits)
+    {
+        traits = aTraits;
+    }
+
     @Override
     public String toString()
     {
